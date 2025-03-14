@@ -1,0 +1,42 @@
+{
+  "name": "cbor-ts",
+  "module": "dist/cbor.js",
+  "type": "module",
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/mod.d.ts",
+      "import": "./dist/mod.js",
+      "require": "./dist/mod.cjs"
+    },
+    "./cbor": {
+      "types": "./dist/cbor.d.ts",
+      "import": "./dist/cbor.js",
+      "require": "./dist/cbor.cjs"
+    },
+    "./cose": {
+      "types": "./dist/cose.d.ts",
+      "import": "./dist/cose.js",
+      "require": "./dist/cose.cjs"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "lint": "biome check --write .",
+    "lint:ci": "biome check --write .",
+    "test": "bun test",
+    "test:watch": "bun test --watch"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@types/bun": "1.2.5",
+    "fast-check": "4.0.0",
+    "fast-check-bun-test": "0.1.1",
+    "tsup": "^8.4.0"
+  },
+  "peerDependencies": {
+    "typescript": "5.8.2"
+  }
+}
