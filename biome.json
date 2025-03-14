@@ -17,10 +17,7 @@
 			"**/*.json",
 			"**/*.css"
 		],
-		"ignore": [
-			"dist",
-			"node_modules"
-		]
+		"ignore": ["dist", "node_modules"]
 	},
 	"formatter": {
 		"enabled": true,

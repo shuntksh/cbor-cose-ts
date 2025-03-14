@@ -28,14 +28,10 @@ jobs:
       - name: Setup bun
         uses: oven-sh/setup-bun@v2
 
-      # Install bun using the official action - https://github.com/oven-sh/setup-bun
-      - name: Link local module
-        run: bun link
-
       # Install dependencies. Omitting cache per -
       # https://github.com/oven-sh/setup-bun/issues/14#issuecomment-1714116221
       - name: Install dependencies - bun
-        run: bun install --silent --frozen-lockfile && cd tests && bun install --silent --frozen-lockfile
+        run: bun install --silent --frozen-lockfile
 
       #
       # Lint -----------------------------------------------------------------
