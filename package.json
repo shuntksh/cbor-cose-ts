@@ -1,5 +1,5 @@
 {
-	"name": "cbor-ts",
+	"name": "cbor-cose-ts",
 	"module": "dist/cbor.js",
 	"type": "module",
 	"files": ["dist"],

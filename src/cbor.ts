@@ -1,68 +1,38 @@
-/**
- * A reusable CBOR (Concise Binary Object Representation) encoder and decoder.
- * Supports maps, arrays, byte strings, text strings, unsigned integers, negative integers,
- * tags (major type 6), floating-point numbers, and special values (false, true, null, undefined).
- * Based on RFC 8949 with deterministic encoding (shortest lengths, sorted map keys).
- *
- * Limitations:
- * - Maximum input size limited to 16MB to prevent memory exhaustion.
- * - Streaming not supported; all data is processed in memory.
- */
+import { concatenateBuffers } from "./utils";
 
-/**
- * Represents all possible CBOR value types as defined in RFC 8949.
- *
- * Major types:
- * - 0: Unsigned integers and simple values (false, true, null, undefined)
- * - 1: Negative integers
- * - 2: Byte strings (ArrayBuffer)
- * - 3: Text strings
- * - 4: Arrays (recursive)
- * - 5: Maps (recursive)
- * - 6: Tagged values (used by COSE)
- * - 7: Floating-point numbers and simple values
- */
 export type CBORValue =
-	| number // Major types 0, 1, 7: integers and floats
-	| ArrayBuffer // Major type 2: byte strings
-	| string // Major type 3: text strings
-	| CBORValue[] // Major type 4: arrays (recursive)
-	| { [key: string | number]: CBORValue } // Major type 5: maps (recursive)
-	| { tag: number; value: CBORValue } // Major type 6: tagged values (used by COSE)
-	| boolean // Major type 7: simple values
-	| null // Major type 7: simple values
-	| undefined; // Major type 7: simple values
+	| number
+	| ArrayBuffer
+	| string
+	| CBORValue[]
+	| { [key: string | number]: CBORValue }
+	| { tag: number; value: CBORValue }
+	| boolean
+	| null
+	| undefined;
 
+/**
+ * RFC 8949: Concise Binary Object Representation (CBOR)
+ */
 export const CBOR = {
 	encode,
 	decode,
+	decodeWithOffset,
+	decodeMapToMap,
 } as const;
 
-// Maximum buffer size (16MB) to prevent DoS via memory exhaustion
 const MAX_BUFFER_SIZE = 16 * 1024 * 1024;
 
-/**
- * Decodes a CBOR-encoded ArrayBuffer into a JavaScript value.
- * @param buffer - The CBOR-encoded data as an ArrayBuffer.
- * @returns The decoded JavaScript value.
- * @throws Error if decoding fails, buffer is malformed, or exceeds size limit.
- * RFC 8949 §3: Basic decoding of CBOR data items
- */
 function decode(buffer: ArrayBuffer): CBORValue {
 	if (buffer.byteLength > MAX_BUFFER_SIZE) {
-		throw new Error(`Buffer exceeds maximum size of ${MAX_BUFFER_SIZE} bytes`);
+		throw new Error(
+			`Buffer exceeds maximum size of ${MAX_BUFFER_SIZE} bytes`,
+		);
 	}
 	const [value] = decodeFirstItem(buffer, 0);
 	return value;
 }
 
-/**
- * Encodes a JavaScript value into a CBOR-encoded ArrayBuffer.
- * @param value - The value to encode (object, string, ArrayBuffer, number, array, tagged value).
- * @returns The CBOR-encoded data as an ArrayBuffer.
- * @throws Error if the value cannot be encoded or exceeds size limits.
- * RFC 8949 §3: Basic encoding of CBOR data items
- */
 function encode(value: CBORValue): ArrayBuffer {
 	const buffers: Uint8Array[] = [];
 	encodeValue(value, buffers);
@@ -75,11 +45,74 @@ function encode(value: CBORValue): ArrayBuffer {
 	return concatenateBuffers(buffers);
 }
 
-// --- Decoding Helpers ---
+/**
+ * Decodes a CBOR buffer and returns the value along with the number of bytes consumed.
+ * Useful for parsing concatenated CBOR data (e.g., COSE key followed by extensions in WebAuthn).
+ *
+ * @param buffer - The buffer to decode.
+ * @param startOffset - The offset to start decoding from.
+ * @returns The decoded value and the number of bytes consumed.
+ */
+function decodeWithOffset(
+	buffer: ArrayBuffer,
+	startOffset = 0,
+): [CBORValue, number] {
+	if (buffer.byteLength > MAX_BUFFER_SIZE) {
+		throw new Error(
+			`Buffer exceeds maximum size of ${MAX_BUFFER_SIZE} bytes`,
+		);
+	}
+	const [value, newOffset] = decodeFirstItem(buffer, startOffset);
+	return [value, newOffset - startOffset];
+}
 
 /**
- * RFC 8949 §3.2: Decode a single CBOR item based on its major type
+ * Decodes a CBOR map directly into a JavaScript Map with specified key/value types.
+ * Tailored for WebAuthn COSE keys (numeric keys, number/ArrayBuffer values).
+ *
+ * @param buffer - The buffer to decode.
+ * @param startOffset - The offset to start decoding from.
+ * @param keyValidator - The validator for the keys.
+ * @param valueValidator - The validator for the values.
+ * @returns The decoded map.
  */
+function decodeMapToMap<K extends string | number, V extends CBORValue>(
+	buffer: ArrayBuffer,
+	startOffset = 0,
+	keyValidator: (key: string | number) => key is K = (key): key is K => true,
+	valueValidator: (value: CBORValue) => value is V = (value): value is V =>
+		true,
+): [Map<K, V>, number] {
+	const [obj, newOffset] = decodeFirstItem(buffer, startOffset);
+	if (
+		typeof obj !== "object" ||
+		obj === null ||
+		"tag" in obj ||
+		Array.isArray(obj)
+	) {
+		throw new Error("Expected CBOR map");
+	}
+	const map = new Map<K, V>();
+	for (const [key, value] of Object.entries(obj)) {
+		const parsedKey =
+			Number(key) === Number.parseInt(key, 10) ? Number(key) : key;
+		if (!keyValidator(parsedKey)) {
+			throw new Error(`Invalid map key: ${parsedKey}`);
+		}
+		if (!valueValidator(value)) {
+			throw new Error(
+				`Invalid map value for key ${parsedKey}: ${value}`,
+			);
+		}
+		map.set(parsedKey as K, value as V);
+	}
+	return [map, newOffset - startOffset];
+}
+
+//
+// --- Decoding Helpers ---
+//
+
 function decodeFirstItem(
 	buffer: ArrayBuffer,
 	startOffset: number,
@@ -88,37 +121,33 @@ function decodeFirstItem(
 	if (startOffset >= buffer.byteLength) {
 		throw new Error("Buffer too short for CBOR decoding");
 	}
-
 	const firstByte = dataView.getUint8(startOffset);
-	const majorType = firstByte >> 5; // §3.1: Major type in high 3 bits
-	const additionalInfo = firstByte & 0x1f; // §3.1: Additional info in low 5 bits
+	const majorType = firstByte >> 5;
+	const additionalInfo = firstByte & 0x1f;
 	const offset = startOffset + 1;
 
 	switch (majorType) {
-		case 0: // §3.2.1: Unsigned integer
+		case 0:
 			return decodeUnsignedInteger(dataView, offset, additionalInfo);
-		case 1: // §3.2.2: Negative integer
+		case 1:
 			return decodeNegativeInteger(dataView, offset, additionalInfo);
-		case 2: // §3.2.3: Byte string
+		case 2:
 			return decodeByteString(buffer, dataView, offset, additionalInfo);
-		case 3: // §3.2.4: Text string
+		case 3:
 			return decodeTextString(buffer, dataView, offset, additionalInfo);
-		case 4: // §3.2.5: Array
+		case 4:
 			return decodeArray(buffer, dataView, offset, additionalInfo);
-		case 5: // §3.2.6: Map
+		case 5:
 			return decodeMap(buffer, dataView, offset, additionalInfo);
-		case 6: // §3.2.7: Tag
+		case 6:
 			return decodeTag(buffer, dataView, offset, additionalInfo);
-		case 7: // §3.2.8: Simple values and floating-point numbers
+		case 7:
 			return decodeSpecial(dataView, offset, additionalInfo);
 		default:
 			throw new Error(`Unsupported CBOR major type: ${majorType}`);
 	}
 }
 
-/**
- * RFC 8949 §3.2.1: Decode unsigned integers
- */
 function decodeUnsignedInteger(
 	dataView: DataView,
 	offset: number,
@@ -144,9 +173,6 @@ function decodeUnsignedInteger(
 	throw new Error("Invalid additional info for unsigned integer");
 }
 
-/**
- * RFC 8949 §3.2.2: Decode negative integers
- */
 function decodeNegativeInteger(
 	dataView: DataView,
 	offset: number,
@@ -172,9 +198,6 @@ function decodeNegativeInteger(
 	throw new Error("Invalid additional info for negative integer");
 }
 
-/**
- * RFC 8949 §3.2.3: Decode byte strings
- */
 function decodeByteString(
 	buffer: ArrayBuffer,
 	dataView: DataView,
@@ -186,9 +209,6 @@ function decodeByteString(
 	return [buffer.slice(newOffset, newOffset + length), newOffset + length];
 }
 
-/**
- * RFC 8949 §3.2.4: Decode text strings (UTF-8 encoded)
- */
 function decodeTextString(
 	buffer: ArrayBuffer,
 	dataView: DataView,
@@ -208,9 +228,6 @@ function decodeTextString(
 	}
 }
 
-/**
- * RFC 8949 §3.2.5: Decode arrays
- */
 function decodeArray(
 	buffer: ArrayBuffer,
 	dataView: DataView,
@@ -218,7 +235,8 @@ function decodeArray(
 	additionalInfo: number,
 ): [CBORValue[], number] {
 	const [length, newOffset] = readLength(dataView, offset, additionalInfo);
-	if (length > 10000) throw new Error("Array length exceeds reasonable limit");
+	if (length > 10000)
+		throw new Error("Array length exceeds reasonable limit");
 	const array: CBORValue[] = [];
 	let currentOffset = newOffset;
 	for (let i = 0; i < length; i++) {
@@ -229,9 +247,6 @@ function decodeArray(
 	return [array, currentOffset];
 }
 
-/**
- * RFC 8949 §3.2.6: Decode maps
- */
 function decodeMap(
 	buffer: ArrayBuffer,
 	dataView: DataView,
@@ -239,7 +254,8 @@ function decodeMap(
 	additionalInfo: number,
 ): [{ [key: string | number]: CBORValue }, number] {
 	const [numPairs, newOffset] = readLength(dataView, offset, additionalInfo);
-	if (numPairs > 10000) throw new Error("Map size exceeds reasonable limit");
+	if (numPairs > 10000)
+		throw new Error("Map size exceeds reasonable limit");
 	const map: { [key: string | number]: CBORValue } = {};
 	let currentOffset = newOffset;
 	for (let i = 0; i < numPairs; i++) {
@@ -254,9 +270,6 @@ function decodeMap(
 	return [map, currentOffset];
 }
 
-/**
- * RFC 8949 §3.2.7: Decode tagged values (major type 6)
- */
 function decodeTag(
 	buffer: ArrayBuffer,
 	dataView: DataView,
@@ -268,9 +281,6 @@ function decodeTag(
 	return [{ tag, value }, finalOffset];
 }
 
-/**
- * RFC 8949 §3.2.8: Decode simple values and floating-point numbers (major type 7)
- */
 function decodeSpecial(
 	dataView: DataView,
 	offset: number,
@@ -278,20 +288,20 @@ function decodeSpecial(
 ): [CBORValue, number] {
 	switch (additionalInfo) {
 		case 20:
-			return [false, offset]; // §3.3: Simple value false
+			return [false, offset];
 		case 21:
-			return [true, offset]; // §3.3: Simple value true
+			return [true, offset];
 		case 22:
-			return [null, offset]; // §3.3: Simple value null
+			return [null, offset];
 		case 23:
-			return [undefined, offset]; // §3.3: Simple value undefined
-		case 25: // §3.2.8: 16-bit float (half-precision)
+			return [undefined, offset];
+		case 25:
 			ensureBytes(dataView, offset, 2);
 			return [dataView.getFloat32(offset, false), offset + 2];
-		case 26: // §3.2.8: 32-bit float (single-precision)
+		case 26:
 			ensureBytes(dataView, offset, 4);
 			return [dataView.getFloat32(offset, false), offset + 4];
-		case 27: // §3.2.8: 64-bit float (double-precision)
+		case 27:
 			ensureBytes(dataView, offset, 8);
 			return [dataView.getFloat64(offset, false), offset + 8];
 		default:
@@ -299,9 +309,6 @@ function decodeSpecial(
 	}
 }
 
-/**
- * RFC 8949 §3.1: Read length from additional information
- */
 function readLength(
 	dataView: DataView,
 	offset: number,
@@ -327,47 +334,42 @@ function readLength(
 	throw new Error("Unsupported CBOR length encoding");
 }
 
-/**
- * Helper to ensure sufficient bytes in buffer (RFC 8949 §3)
- */
 function ensureBytes(dataView: DataView, offset: number, length: number): void {
 	if (offset + length > dataView.byteLength) {
 		throw new Error("Buffer too short for CBOR data");
 	}
 }
 
+//
 // --- Encoding Helpers ---
+//
 
-/**
- * RFC 8949 §3: Encode a CBOR value based on its type
- */
 function encodeValue(value: CBORValue, buffers: Uint8Array[]): void {
 	if (typeof value === "number") {
 		if (Number.isInteger(value)) {
-			if (value >= 0)
-				encodeUnsignedInteger(value, buffers); // §3.2.1
-			else encodeNegativeInteger(value, buffers); // §3.2.2
+			if (value >= 0) encodeUnsignedInteger(value, buffers);
+			else encodeNegativeInteger(value, buffers);
 		} else {
-			encodeFloat(value, buffers); // §3.2.8
+			encodeFloat(value, buffers);
 		}
 	} else if (value instanceof ArrayBuffer) {
-		encodeByteString(value, buffers); // §3.2.3
+		encodeByteString(value, buffers);
 	} else if (typeof value === "string") {
-		encodeTextString(value, buffers); // §3.2.4
+		encodeTextString(value, buffers);
 	} else if (Array.isArray(value)) {
-		encodeArray(value, buffers); // §3.2.5
+		encodeArray(value, buffers);
 	} else if (typeof value === "object" && value !== null) {
 		if ("tag" in value && "value" in value && typeof value.tag === "number") {
-			encodeTag(value.tag, value.value, buffers); // §3.2.7
+			encodeTag(value.tag, value.value, buffers);
 		} else {
-			encodeMap(value, buffers); // §3.2.6
+			encodeMap(value, buffers);
 		}
 	} else if (typeof value === "boolean") {
-		encodeBoolean(value, buffers); // §3.3
+		encodeBoolean(value, buffers);
 	} else if (value === null) {
-		encodeNull(buffers); // §3.3
+		encodeNull(buffers);
 	} else if (value === undefined) {
-		encodeUndefined(buffers); // §3.3
+		encodeUndefined(buffers);
 	} else {
 		throw new Error(
 			`Unsupported value type for CBOR encoding: ${typeof value}`,
@@ -375,9 +377,6 @@ function encodeValue(value: CBORValue, buffers: Uint8Array[]): void {
 	}
 }
 
-/**
- * RFC 8949 §3.2.1: Encode unsigned integers
- */
 function encodeUnsignedInteger(value: number, buffers: Uint8Array[]): void {
 	if (value < 0 || !Number.isInteger(value)) {
 		throw new Error("Only unsigned integers are supported");
@@ -406,9 +405,6 @@ function encodeUnsignedInteger(value: number, buffers: Uint8Array[]): void {
 	}
 }
 
-/**
- * RFC 8949 §3.2.2: Encode negative integers
- */
 function encodeNegativeInteger(value: number, buffers: Uint8Array[]): void {
 	if (!Number.isInteger(value) || value >= 0) {
 		throw new Error("Only negative integers are supported");
@@ -438,42 +434,30 @@ function encodeNegativeInteger(value: number, buffers: Uint8Array[]): void {
 	}
 }
 
-/**
- * RFC 8949 §3.2.3: Encode byte strings
- */
 function encodeByteString(value: ArrayBuffer, buffers: Uint8Array[]): void {
 	const length = value.byteLength;
-	const header = encodeLength(2, length); // Major type 2
+	const header = encodeLength(2, length);
 	buffers.push(header);
 	buffers.push(new Uint8Array(value));
 }
 
-/**
- * RFC 8949 §3.2.4: Encode text strings (UTF-8 encoded)
- */
 function encodeTextString(value: string, buffers: Uint8Array[]): void {
 	const bytes = new TextEncoder().encode(value);
-	const header = encodeLength(3, bytes.length); // Major type 3
+	const header = encodeLength(3, bytes.length);
 	buffers.push(header);
 	buffers.push(bytes);
 }
 
-/**
- * RFC 8949 §3.2.5: Encode arrays
- */
 function encodeArray(value: CBORValue[], buffers: Uint8Array[]): void {
 	if (value.length > 10000)
 		throw new Error("Array length exceeds reasonable limit");
-	const header = encodeLength(4, value.length); // Major type 4
+	const header = encodeLength(4, value.length);
 	buffers.push(header);
 	for (const item of value) {
 		encodeValue(item, buffers);
 	}
 }
 
-/**
- * RFC 8949 §3.2.6 & §4.2: Encode maps with deterministic key sorting
- */
 function encodeMap(
 	value: { [key: string | number]: CBORValue },
 	buffers: Uint8Array[],
@@ -481,9 +465,8 @@ function encodeMap(
 	const entries = Object.entries(value);
 	if (entries.length > 10000)
 		throw new Error("Map size exceeds reasonable limit");
-	// §4.2: Sort keys for deterministic encoding
 	entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-	const header = encodeLength(5, entries.length); // Major type 5
+	const header = encodeLength(5, entries.length);
 	buffers.push(header);
 	for (const [key, val] of entries) {
 		const numKey = Number(key);
@@ -496,31 +479,22 @@ function encodeMap(
 	}
 }
 
-/**
- * RFC 8949 §3.2.7: Encode tagged values (major type 6)
- */
 function encodeTag(tag: number, value: CBORValue, buffers: Uint8Array[]): void {
 	if (!Number.isInteger(tag) || tag < 0) {
 		throw new Error("Tag must be a non-negative integer");
 	}
-	const header = encodeLength(6, tag); // Major type 6
+	const header = encodeLength(6, tag);
 	buffers.push(header);
 	encodeValue(value, buffers);
 }
 
-/**
- * RFC 8949 §3.2.8: Encode floating-point numbers (64-bit default)
- */
 function encodeFloat(value: number, buffers: Uint8Array[]): void {
 	const buffer = new Uint8Array(9);
-	buffer[0] = 0xfb; // Major type 7, 64-bit float (most precise)
+	buffer[0] = 0xfb;
 	new DataView(buffer.buffer).setFloat64(1, value, false);
 	buffers.push(buffer.slice(0, 9));
 }
 
-/**
- * RFC 8949 §3.1: Encode length for major types
- */
 function encodeLength(majorType: number, length: number): Uint8Array {
 	const mt = majorType << 5;
 	if (length <= 23) return new Uint8Array([mt | length]);
@@ -540,40 +514,14 @@ function encodeLength(majorType: number, length: number): Uint8Array {
 	throw new Error("Length too large for CBOR encoding");
 }
 
-/**
- * RFC 8949 §3.3: Encode boolean values (true/false)
- */
 function encodeBoolean(value: boolean, buffers: Uint8Array[]): void {
 	buffers.push(new Uint8Array([value ? 0xf5 : 0xf4]));
 }
 
-/**
- * RFC 8949 §3.3: Encode null value
- */
 function encodeNull(buffers: Uint8Array[]): void {
 	buffers.push(new Uint8Array([0xf6]));
 }
 
-/**
- * RFC 8949 §3.3: Encode undefined value
- */
 function encodeUndefined(buffers: Uint8Array[]): void {
 	buffers.push(new Uint8Array([0xf7]));
-}
-
-/**
- * Helper to concatenate buffers (not explicitly in RFC 8949, implementation detail)
- */
-function concatenateBuffers(buffers: Uint8Array[]): ArrayBuffer {
-	const totalLength = buffers.reduce(
-		(sum, buffer) => sum + buffer.byteLength,
-		0,
-	);
-	const result = new Uint8Array(totalLength);
-	let offset = 0;
-	for (const buffer of buffers) {
-		result.set(buffer, offset);
-		offset += buffer.byteLength;
-	}
-	return result.buffer;
 }

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { fc } from "fast-check-bun-test";
+
 import {
-	Algorithm,
 	COSE,
-	HeaderParameter,
+	COSEAlgorithm,
+	COSEHeader,
 	type COSEEncrypt,
 	type COSEEncrypt0,
 	type COSEMac,
@@ -17,7 +18,7 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Sign1 with minimal fields", () => {
 			const sign1: COSESign1 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.ES256,
+					[COSEHeader.alg]: COSEAlgorithm.ES256,
 				},
 				unprotected: {},
 				payload: null,
@@ -32,12 +33,12 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Sign1 with all fields", () => {
 			const sign1: COSESign1 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.ES256,
-					[HeaderParameter.crit]: [HeaderParameter.alg],
-					[HeaderParameter.ctyp]: "application/cbor",
+					[COSEHeader.alg]: COSEAlgorithm.ES256,
+					[COSEHeader.crit]: [COSEHeader.alg],
+					[COSEHeader.ctyp]: "application/cbor",
 				},
 				unprotected: {
-					[HeaderParameter.kid]: new Uint8Array([1, 2, 3]).buffer,
+					[COSEHeader.kid]: new Uint8Array([1, 2, 3]).buffer,
 				},
 				payload: new Uint8Array([5, 6, 7, 8]).buffer,
 				signature: new Uint8Array([9, 10, 11, 12]).buffer,
@@ -51,7 +52,7 @@ describe("COSE", () => {
 		test("should handle COSE_Sign1 with various payload types", () => {
 			const sign1: COSESign1 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.ES256,
+					[COSEHeader.alg]: COSEAlgorithm.ES256,
 				},
 				unprotected: {},
 				payload: new TextEncoder().encode("Hello, World!")
@@ -80,7 +81,7 @@ describe("COSE", () => {
 		test("should throw error for invalid algorithm", () => {
 			const sign1: COSESign1 = {
 				protected: {
-					[HeaderParameter.alg]: 999, // Invalid algorithm
+					[COSEHeader.alg]: 999, // Invalid algorithm
 				},
 				unprotected: {},
 				payload: null,
@@ -97,14 +98,14 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Sign with minimal fields", () => {
 			const sign: COSESign = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.ES256,
+					[COSEHeader.alg]: COSEAlgorithm.ES256,
 				},
 				unprotected: {},
 				payload: null,
 				signatures: [
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.ES256,
+							[COSEHeader.alg]: COSEAlgorithm.ES256,
 						},
 						unprotected: {},
 						signature: new Uint8Array([1, 2, 3, 4]).buffer,
@@ -120,26 +121,26 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Sign with multiple signatures", () => {
 			const sign: COSESign = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.ES256,
+					[COSEHeader.alg]: COSEAlgorithm.ES256,
 				},
 				unprotected: {},
 				payload: new Uint8Array([1, 2, 3]).buffer,
 				signatures: [
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.ES256,
+							[COSEHeader.alg]: COSEAlgorithm.ES256,
 						},
 						unprotected: {
-							[HeaderParameter.kid]: new Uint8Array([1]).buffer,
+							[COSEHeader.kid]: new Uint8Array([1]).buffer,
 						},
 						signature: new Uint8Array([2, 3, 4]).buffer,
 					},
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.ES384,
+							[COSEHeader.alg]: COSEAlgorithm.ES384,
 						},
 						unprotected: {
-							[HeaderParameter.kid]: new Uint8Array([2]).buffer,
+							[COSEHeader.kid]: new Uint8Array([2]).buffer,
 						},
 						signature: new Uint8Array([5, 6, 7]).buffer,
 					},
@@ -156,7 +157,7 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Mac0 with minimal fields", () => {
 			const mac0: COSEMac0 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.HMAC_256_256,
+					[COSEHeader.alg]: COSEAlgorithm.HMAC_256_256,
 				},
 				unprotected: {},
 				payload: null,
@@ -171,10 +172,10 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Mac0 with all fields", () => {
 			const mac0: COSEMac0 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.HMAC_256_256,
+					[COSEHeader.alg]: COSEAlgorithm.HMAC_256_256,
 				},
 				unprotected: {
-					[HeaderParameter.kid]: new Uint8Array([1, 2, 3]).buffer,
+					[COSEHeader.kid]: new Uint8Array([1, 2, 3]).buffer,
 				},
 				payload: new Uint8Array([4, 5, 6]).buffer,
 				tag: new Uint8Array([7, 8, 9]).buffer,
@@ -190,14 +191,14 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Mac with minimal fields", () => {
 			const mac: COSEMac = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.HMAC_256_256,
+					[COSEHeader.alg]: COSEAlgorithm.HMAC_256_256,
 				},
 				unprotected: {},
 				payload: null,
 				recipients: [
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.HMAC_256_256,
+							[COSEHeader.alg]: COSEAlgorithm.HMAC_256_256,
 						},
 						unprotected: {},
 						tag: new Uint8Array([1, 2, 3, 4]).buffer,
@@ -213,26 +214,26 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Mac with multiple recipients", () => {
 			const mac: COSEMac = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.HMAC_256_256,
+					[COSEHeader.alg]: COSEAlgorithm.HMAC_256_256,
 				},
 				unprotected: {},
 				payload: new Uint8Array([1, 2, 3]).buffer,
 				recipients: [
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.HMAC_256_256,
+							[COSEHeader.alg]: COSEAlgorithm.HMAC_256_256,
 						},
 						unprotected: {
-							[HeaderParameter.kid]: new Uint8Array([1]).buffer,
+							[COSEHeader.kid]: new Uint8Array([1]).buffer,
 						},
 						tag: new Uint8Array([2, 3, 4]).buffer,
 					},
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.HMAC_384_384,
+							[COSEHeader.alg]: COSEAlgorithm.HMAC_384_384,
 						},
 						unprotected: {
-							[HeaderParameter.kid]: new Uint8Array([2]).buffer,
+							[COSEHeader.kid]: new Uint8Array([2]).buffer,
 						},
 						tag: new Uint8Array([5, 6, 7]).buffer,
 					},
@@ -249,7 +250,7 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Encrypt0 with minimal fields", () => {
 			const encrypt0: COSEEncrypt0 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.AES_GCM_128,
+					[COSEHeader.alg]: COSEAlgorithm.AES_GCM_128,
 				},
 				unprotected: {},
 				ciphertext: new Uint8Array([1, 2, 3, 4]).buffer,
@@ -263,13 +264,13 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Encrypt0 with all fields", () => {
 			const encrypt0: COSEEncrypt0 = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.AES_GCM_128,
-					[HeaderParameter.iv]: new Uint8Array([
+					[COSEHeader.alg]: COSEAlgorithm.AES_GCM_128,
+					[COSEHeader.iv]: new Uint8Array([
 						1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 					]).buffer,
 				},
 				unprotected: {
-					[HeaderParameter.kid]: new Uint8Array([1, 2, 3]).buffer,
+					[COSEHeader.kid]: new Uint8Array([1, 2, 3]).buffer,
 				},
 				ciphertext: new Uint8Array([4, 5, 6]).buffer,
 			};
@@ -284,14 +285,14 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Encrypt with minimal fields", () => {
 			const encrypt: COSEEncrypt = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.AES_GCM_128,
+					[COSEHeader.alg]: COSEAlgorithm.AES_GCM_128,
 				},
 				unprotected: {},
 				ciphertext: new Uint8Array([1, 2, 3, 4]).buffer,
 				recipients: [
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.AES_GCM_128,
+							[COSEHeader.alg]: COSEAlgorithm.AES_GCM_128,
 						},
 						unprotected: {},
 						encrypted_key: new Uint8Array([5, 6, 7, 8]).buffer,
@@ -307,8 +308,8 @@ describe("COSE", () => {
 		test("should encode and decode COSE_Encrypt with multiple recipients", () => {
 			const encrypt: COSEEncrypt = {
 				protected: {
-					[HeaderParameter.alg]: Algorithm.AES_GCM_128,
-					[HeaderParameter.iv]: new Uint8Array([
+					[COSEHeader.alg]: COSEAlgorithm.AES_GCM_128,
+					[COSEHeader.iv]: new Uint8Array([
 						1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
 					]).buffer,
 				},
@@ -317,19 +318,19 @@ describe("COSE", () => {
 				recipients: [
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.AES_GCM_128,
+							[COSEHeader.alg]: COSEAlgorithm.AES_GCM_128,
 						},
 						unprotected: {
-							[HeaderParameter.kid]: new Uint8Array([1]).buffer,
+							[COSEHeader.kid]: new Uint8Array([1]).buffer,
 						},
 						encrypted_key: new Uint8Array([2, 3, 4]).buffer,
 					},
 					{
 						protected: {
-							[HeaderParameter.alg]: Algorithm.AES_GCM_192,
+							[COSEHeader.alg]: COSEAlgorithm.AES_GCM_192,
 						},
 						unprotected: {
-							[HeaderParameter.kid]: new Uint8Array([2]).buffer,
+							[COSEHeader.kid]: new Uint8Array([2]).buffer,
 						},
 						encrypted_key: new Uint8Array([5, 6, 7]).buffer,
 					},
@@ -345,56 +346,56 @@ describe("COSE", () => {
 	describe("Property-based tests", () => {
 		// Helper function to generate random header maps
 		const headerMapArbitrary = fc.record({
-			[HeaderParameter.alg]: fc.oneof(
-				fc.constant(Algorithm.ES256),
-				fc.constant(Algorithm.ES384),
-				fc.constant(Algorithm.ES512),
-				fc.constant(Algorithm.EdDSA),
-				fc.constant(Algorithm.RS256),
-				fc.constant(Algorithm.RS384),
-				fc.constant(Algorithm.RS512),
-				fc.constant(Algorithm.PS256),
-				fc.constant(Algorithm.PS384),
-				fc.constant(Algorithm.PS512),
-				fc.constant(Algorithm.HMAC_256_256),
-				fc.constant(Algorithm.HMAC_384_384),
-				fc.constant(Algorithm.HMAC_512_512),
-				fc.constant(Algorithm.AES_GCM_128),
-				fc.constant(Algorithm.AES_GCM_192),
-				fc.constant(Algorithm.AES_GCM_256),
-				fc.constant(Algorithm.ChaCha20_Poly1305),
-				fc.constant(Algorithm.direct),
+			[COSEHeader.alg]: fc.oneof(
+				fc.constant(COSEAlgorithm.ES256),
+				fc.constant(COSEAlgorithm.ES384),
+				fc.constant(COSEAlgorithm.ES512),
+				fc.constant(COSEAlgorithm.EdDSA),
+				fc.constant(COSEAlgorithm.RS256),
+				fc.constant(COSEAlgorithm.RS384),
+				fc.constant(COSEAlgorithm.RS512),
+				fc.constant(COSEAlgorithm.PS256),
+				fc.constant(COSEAlgorithm.PS384),
+				fc.constant(COSEAlgorithm.PS512),
+				fc.constant(COSEAlgorithm.HMAC_256_256),
+				fc.constant(COSEAlgorithm.HMAC_384_384),
+				fc.constant(COSEAlgorithm.HMAC_512_512),
+				fc.constant(COSEAlgorithm.AES_GCM_128),
+				fc.constant(COSEAlgorithm.AES_GCM_192),
+				fc.constant(COSEAlgorithm.AES_GCM_256),
+				fc.constant(COSEAlgorithm.ChaCha20_Poly1305),
+				fc.constant(COSEAlgorithm.direct),
 			),
-			[HeaderParameter.crit]: fc.oneof(
+			[COSEHeader.crit]: fc.oneof(
 				fc.array(fc.integer()),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.ctyp]: fc.oneof(fc.string(), fc.constant(undefined)),
-			[HeaderParameter.kid]: fc.oneof(
+			[COSEHeader.ctyp]: fc.oneof(fc.string(), fc.constant(undefined)),
+			[COSEHeader.kid]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.iv]: fc.oneof(
+			[COSEHeader.iv]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.partial_iv]: fc.oneof(
+			[COSEHeader.partial_iv]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.counter_signature]: fc.oneof(
+			[COSEHeader.counter_signature]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.salt]: fc.oneof(
+			[COSEHeader.salt]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.x5chain]: fc.oneof(
+			[COSEHeader.x5chain]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
-			[HeaderParameter.x5t]: fc.oneof(
+			[COSEHeader.x5t]: fc.oneof(
 				fc.uint8Array().map((arr) => arr.buffer),
 				fc.constant(undefined),
 			),
@@ -539,18 +540,18 @@ describe("COSE", () => {
 				fc.property(
 					fc.record({
 						protected: fc.record({
-							[HeaderParameter.alg]: fc.constant(Algorithm.ES256),
-							[HeaderParameter.crit]: fc.array(fc.integer()),
-							[HeaderParameter.ctyp]: fc.string(),
-							[HeaderParameter.kid]: fc.uint8Array().map((arr) => arr.buffer),
-							[HeaderParameter.iv]: fc.uint8Array().map((arr) => arr.buffer),
+							[COSEHeader.alg]: fc.constant(COSEAlgorithm.ES256),
+							[COSEHeader.crit]: fc.array(fc.integer()),
+							[COSEHeader.ctyp]: fc.string(),
+							[COSEHeader.kid]: fc.uint8Array().map((arr) => arr.buffer),
+							[COSEHeader.iv]: fc.uint8Array().map((arr) => arr.buffer),
 						}),
 						unprotected: fc.record({
-							[HeaderParameter.alg]: fc.integer(),
-							[HeaderParameter.crit]: fc.array(fc.integer()),
-							[HeaderParameter.ctyp]: fc.string(),
-							[HeaderParameter.kid]: fc.uint8Array().map((arr) => arr.buffer),
-							[HeaderParameter.iv]: fc.uint8Array().map((arr) => arr.buffer),
+							[COSEHeader.alg]: fc.integer(),
+							[COSEHeader.crit]: fc.array(fc.integer()),
+							[COSEHeader.ctyp]: fc.string(),
+							[COSEHeader.kid]: fc.uint8Array().map((arr) => arr.buffer),
+							[COSEHeader.iv]: fc.uint8Array().map((arr) => arr.buffer),
 						}),
 						payload: binaryDataArbitrary,
 						signature: fc.uint8Array().map((arr) => arr.buffer),
